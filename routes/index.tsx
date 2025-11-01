@@ -1,64 +1,129 @@
+// routes/index.tsx
 import { Handlers, PageProps } from "$fresh/server.ts";
-import { ObjectId } from "npm:mongodb";
-import IncidenciasManager from "../islands/IncidenciasManager.tsx";
-import { incidencias } from "../utils.ts";
-import type { EstadoIncidencia, Incidencia, Prioridad } from "../types.ts";
+import { incidencias } from "../utils/db.ts";
+import { Incidencia } from "../types.ts";
+import IncidenciasList from "../islands/IncidenciasList.tsx"; // 👈 nuevo import
 
-interface IncidenciaDocument {
-  _id: ObjectId;
-  titulo: string;
-  descripcion: string;
-  prioridad: Prioridad;
-  estado: EstadoIncidencia;
-  fecha_creacion: Date;
-  fecha_cierre?: Date | null;
-  tecnico_asignado?: string | null;
+interface Dashboard {
+  total: number;
+  abiertas: number;
+  enCurso: number;
+  cerradas: number;
 }
 
-const mapToIncidencia = (doc: IncidenciaDocument): Incidencia => ({
-  _id: doc._id.toString(),
-  titulo: doc.titulo,
-  descripcion: doc.descripcion,
-  prioridad: doc.prioridad,
-  estado: doc.estado,
-  fecha_creacion: doc.fecha_creacion.toISOString(),
-  fecha_cierre: doc.fecha_cierre ? doc.fecha_cierre.toISOString() : null,
-  tecnico_asignado: doc.tecnico_asignado ?? undefined,
-});
+export const handler: Handlers = {
+  async GET(_, ctx) {
+    const data = await incidencias.find({}).toArray();
 
-export const handler: Handlers<Incidencia[]> = {
-  async GET(_req, ctx) {
-    const docs = await incidencias
-      .find<IncidenciaDocument>({})
-      .sort({ fecha_creacion: -1 })
-      .toArray();
+    const dashboard: Dashboard = {
+      total: data.length,
+      abiertas: data.filter((i) => i.estado === "abierta").length,
+      enCurso: data.filter((i) => i.estado === "en curso").length,
+      cerradas: data.filter((i) => i.estado === "cerrada").length,
+    };
 
-    return ctx.render(docs.map(mapToIncidencia));
+    return ctx.render({ data, dashboard });
+  },
+
+  async POST(req) {
+    const form = await req.formData();
+    const titulo = form.get("titulo")?.toString() || "";
+    const descripcion = form.get("descripcion")?.toString() || "";
+    const prioridad = form.get("prioridad")?.toString() as
+      | "baja"
+      | "media"
+      | "alta";
+
+    if (!titulo || !descripcion || !prioridad) {
+      return new Response("❌ Faltan campos obligatorios", { status: 400 });
+    }
+
+    const nueva: Omit<Incidencia, "_id"> = {
+      titulo,
+      descripcion,
+      prioridad,
+      estado: "abierta",
+      fecha_creacion: new Date(),
+    };
+
+    if (prioridad === "alta") nueva.tecnico = "Técnico principal";
+
+    await incidencias.insertOne(nueva);
+
+    return new Response("", {
+      status: 303,
+      headers: { Location: "/" },
+    });
   },
 };
 
-export default function Home({ data }: PageProps<Incidencia[]>) {
-  return (
-    <main class="min-h-screen bg-slate-100">
-        <header class="bg-emerald-600 py-12 text-white">
-          <div class="max-w-5xl mx-auto px-4">
-            <p class="uppercase tracking-wide text-sm font-semibold text-emerald-200">
-              Prototipo ITSM - Memoria de prácticas
-            </p>
-            <h1 class="mt-2 text-3xl sm:text-4xl font-bold">
-              Gestión de incidencias simplificada
-            </h1>
-            <p class="mt-3 text-emerald-100 max-w-2xl">
-              Crea, visualiza y actualiza incidencias inspiradas en ServiceNow. Las
-              incidencias de prioridad alta se asignan automáticamente al técnico
-              principal y el cierre registra la fecha correspondiente.
-            </p>
-          </div>
-        </header>
+export default function Home(
+  { data }: PageProps<{ data: Incidencia[]; dashboard: Dashboard }>,
+) {
+  const dashboard = (data as any).dashboard as Dashboard;
+  const incidenciasData = (data as any).data as Incidencia[];
 
-        <div class="max-w-5xl mx-auto px-4 py-10">
-          <IncidenciasManager incidenciasIniciales={data} />
+  return (
+    <div class="p-8 font-sans bg-gray-50 min-h-screen">
+      <h1 class="text-3xl font-bold mb-8 text-blue-700 text-center">
+        🧾 Gestión de Incidencias ITSM
+      </h1>
+
+      {/* 📊 Panel de métricas */}
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 text-center">
+        <div class="bg-white shadow rounded-lg p-4 border-t-4 border-blue-500">
+          <p class="text-gray-500 text-sm">Total</p>
+          <h2 class="text-2xl font-bold text-blue-700">{dashboard.total}</h2>
         </div>
-        </main>
+        <div class="bg-white shadow rounded-lg p-4 border-t-4 border-green-500">
+          <p class="text-gray-500 text-sm">Abiertas</p>
+          <h2 class="text-2xl font-bold text-green-600">{dashboard.abiertas}</h2>
+        </div>
+        <div class="bg-white shadow rounded-lg p-4 border-t-4 border-yellow-400">
+          <p class="text-gray-500 text-sm">En curso</p>
+          <h2 class="text-2xl font-bold text-yellow-500">
+            {dashboard.enCurso}
+          </h2>
+        </div>
+        <div class="bg-white shadow rounded-lg p-4 border-t-4 border-red-500">
+          <p class="text-gray-500 text-sm">Cerradas</p>
+          <h2 class="text-2xl font-bold text-red-600">{dashboard.cerradas}</h2>
+        </div>
+      </div>
+
+      {/* 📝 Formulario */}
+      <form
+        method="POST"
+        class="bg-white shadow-md rounded-lg p-6 mb-8 flex flex-col gap-3 max-w-lg mx-auto"
+      >
+        <input
+          name="titulo"
+          placeholder="Título"
+          class="border p-2 rounded-md"
+          required
+        />
+        <textarea
+          name="descripcion"
+          placeholder="Descripción"
+          class="border p-2 rounded-md"
+          required
+        />
+        <select name="prioridad" class="border p-2 rounded-md" required>
+          <option value="">Seleccionar prioridad</option>
+          <option value="baja">Baja</option>
+          <option value="media">Media</option>
+          <option value="alta">Alta</option>
+        </select>
+        <button
+          type="submit"
+          class="bg-blue-600 text-white p-2 rounded-md hover:bg-blue-700 transition"
+        >
+          ➕ Crear incidencia
+        </button>
+      </form>
+
+      {/* 🧩 Listado interactivo */}
+      <IncidenciasList incidencias={incidenciasData} />
+    </div>
   );
 }
