@@ -1,5 +1,5 @@
 // islands/IncidenciasList.tsx
-import { useState } from "preact/hooks";
+import { useState, useMemo, useEffect } from "preact/hooks";
 import { Incidencia } from "../types.ts";
 
 interface Props {
@@ -9,6 +9,15 @@ interface Props {
 export default function IncidenciasList({ incidencias }: Props) {
   const [estadoFiltro, setEstadoFiltro] = useState("todos");
   const [prioridadFiltro, setPrioridadFiltro] = useState("todas");
+  const [lista, setLista] = useState(incidencias);
+  const [isUpdating, setIsUpdating] = useState<string | null>(null);
+  const [mensaje, setMensaje] = useState<
+    { tipo: "success" | "error"; texto: string } | undefined
+  >();
+
+  useEffect(() => {
+    setLista(incidencias);
+  }, [incidencias]);
 
   const filtrar = (i: Incidencia) => {
     const matchEstado =
@@ -18,21 +27,88 @@ export default function IncidenciasList({ incidencias }: Props) {
     return matchEstado && matchPrioridad;
   };
 
-  const resultados = incidencias.filter(filtrar);
+  const resultados = useMemo(
+    () => lista.filter(filtrar),
+    [lista, estadoFiltro, prioridadFiltro],
+  );
+
+  const actualizarEstado = async (id: string, estado: Incidencia["estado"]) => {
+    try {
+      setIsUpdating(id + estado);
+      setMensaje(undefined);
+
+      const respuesta = await fetch("/api/incidencias", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, estado }),
+      });
+
+      if (!respuesta.ok) {
+        const data = await respuesta.json().catch(() => ({}));
+        throw new Error(data.error || "No se pudo actualizar la incidencia");
+      }
+
+      setLista((prev) =>
+        prev.map((inc) =>
+          inc._id?.toString() === id
+            ? {
+              ...inc,
+              estado,
+              fecha_cierre: estado === "cerrada" ? new Date() : undefined,
+            }
+            : inc
+        )
+      );
+
+      setMensaje({
+        tipo: "success",
+        texto: estado === "cerrada"
+          ? "Incidencia cerrada correctamente"
+          : "Estado actualizado a 'En curso'",
+      });
+    } catch (error) {
+      setMensaje({
+        tipo: "error",
+        texto: error instanceof Error
+          ? error.message
+          : "Ocurrió un error desconocido",
+      });
+    } finally {
+      setIsUpdating(null);
+    }
+  };
 
   const resetFiltros = () => {
     setEstadoFiltro("todos");
     setPrioridadFiltro("todas");
   };
 
+  // ---------------------------------------------
+  // 🎨 Helpers visuales
+  // ---------------------------------------------
+
+  const getEstadoClase = (estado: string) => {
+    if (estado === "abierta") return "state-chip state-open";
+    if (estado === "en curso") return "state-chip state-progress";
+    return "state-chip state-closed";
+  };
+
+  const getPrioridadClase = (prioridad: string) => {
+    if (prioridad === "alta") return "inc-card inc-high";
+    if (prioridad === "media") return "inc-card inc-medium";
+    return "inc-card inc-low";
+  };
+
+  // ---------------------------------------------
+
   return (
     <div class="space-y-6">
       {/* 🎯 Barra de filtros */}
-      <div class="flex flex-wrap gap-4 items-center mb-4 bg-white shadow-sm p-4 rounded-lg border">
+      <div class="filter-bar">
         <div>
-          <label class="text-sm font-medium text-gray-700 mr-2">Estado:</label>
+          <label class="filter-label">Estado</label>
           <select
-            class="border rounded p-1 focus:ring-2 focus:ring-blue-400"
+            class="filter-select"
             value={estadoFiltro}
             onChange={(e) => setEstadoFiltro(e.currentTarget.value)}
           >
@@ -44,11 +120,9 @@ export default function IncidenciasList({ incidencias }: Props) {
         </div>
 
         <div>
-          <label class="text-sm font-medium text-gray-700 mr-2">
-            Prioridad:
-          </label>
+          <label class="filter-label">Prioridad</label>
           <select
-            class="border rounded p-1 focus:ring-2 focus:ring-blue-400"
+            class="filter-select"
             value={prioridadFiltro}
             onChange={(e) => setPrioridadFiltro(e.currentTarget.value)}
           >
@@ -59,99 +133,117 @@ export default function IncidenciasList({ incidencias }: Props) {
           </select>
         </div>
 
-        <button
-          onClick={resetFiltros}
-          class="ml-auto bg-gray-200 text-gray-700 px-3 py-1 rounded hover:bg-gray-300 transition"
-        >
+        <button onClick={resetFiltros} class="filter-reset">
           🔄 Restablecer
         </button>
       </div>
 
-      {/* 🏷️ Chips de filtros activos */}
+      {/* Mensaje de éxito/error */}
+      {mensaje && (
+        <div
+          class={`alert ${
+            mensaje.tipo === "success" ? "alert-success" : "alert-error"
+          }`}
+        >
+          {mensaje.texto}
+        </div>
+      )}
+
+      {/* Chips de filtros activos */}
       {(estadoFiltro !== "todos" || prioridadFiltro !== "todas") && (
-        <div class="flex flex-wrap gap-2 mb-4">
+        <div class="active-filters">
           {estadoFiltro !== "todos" && (
-            <span
-              class={`px-3 py-1 rounded-full text-sm font-medium ${
-                estadoFiltro === "abierta"
-                  ? "bg-green-100 text-green-700"
-                  : estadoFiltro === "en curso"
-                  ? "bg-yellow-100 text-yellow-700"
-                  : "bg-red-100 text-red-700"
-              }`}
-            >
+            <span class={`chip ${getEstadoClase(estadoFiltro)}`}>
               Estado: {estadoFiltro}
             </span>
           )}
 
           {prioridadFiltro !== "todas" && (
-            <span
-              class={`px-3 py-1 rounded-full text-sm font-medium ${
-                prioridadFiltro === "alta"
-                  ? "bg-red-100 text-red-700"
-                  : prioridadFiltro === "media"
-                  ? "bg-yellow-100 text-yellow-700"
-                  : "bg-green-100 text-green-700"
-              }`}
-            >
+            <span class={`chip prioridad-${prioridadFiltro}`}>
               Prioridad: {prioridadFiltro}
             </span>
           )}
         </div>
       )}
 
-      {/* 📋 Resultados */}
-      <p class="text-sm text-gray-500 mb-2">
-        Mostrando {resultados.length} de {incidencias.length} incidencias
+      {/* Resultados */}
+      <p class="result-count">
+        Mostrando {resultados.length} de {lista.length} incidencias
       </p>
 
+      {/* Lista */}
       {resultados.length === 0
-        ? <p class="text-gray-500">No hay incidencias que coincidan.</p>
+        ? <p>No hay incidencias que coincidan.</p>
         : (
-          <ul class="grid gap-4">
-            {resultados.map((i) => (
-              <li
-                key={i._id?.$oid}
-                class={`p-4 rounded-lg shadow bg-white ${
-                  i.prioridad === "alta"
-                    ? "border-l-8 border-red-500"
-                    : i.prioridad === "media"
-                    ? "border-l-8 border-yellow-400"
-                    : "border-l-8 border-green-400"
-                }`}
-              >
-                <div class="flex justify-between items-start">
-                  <h3 class="text-xl font-bold">{i.titulo}</h3>
-                  <span
-                    class={`px-2 py-1 text-xs rounded-full font-medium ${
-                      i.estado === "abierta"
-                        ? "bg-green-100 text-green-700"
-                        : i.estado === "en curso"
-                        ? "bg-yellow-100 text-yellow-700"
-                        : "bg-red-100 text-red-700"
-                    }`}
-                  >
-                    {i.estado.toUpperCase()}
-                  </span>
-                </div>
+          <ul class="inc-list">
+            {resultados.map((i) => {
+              const oid = i._id?.toString();
 
-                <p class="text-gray-700 mt-1">{i.descripcion}</p>
-                <p class="text-sm text-gray-500 mt-1">
-                  Prioridad: <b>{i.prioridad}</b>{" "}
-                  {i.tecnico && (
-                    <>| Técnico: <b>{i.tecnico}</b></>
-                  )}
-                </p>
-                <p class="text-xs text-gray-400 mt-1">
-                  Creado el: {new Date(i.fecha_creacion).toLocaleString()}
-                </p>
-                {i.fecha_cierre && (
-                  <p class="text-xs text-green-600 mt-1">
-                    ✅ Cerrada el: {new Date(i.fecha_cierre).toLocaleString()}
-                  </p>
-                )}
-              </li>
-            ))}
+              // Validación del ID
+              if (!oid || !/^[0-9a-fA-F]{24}$/.test(oid)) {
+                console.error("⚠️ ID de incidencia inválido:", i);
+                return (
+                  <li class={getPrioridadClase(i.prioridad)} key={i.titulo}>
+                    <div class="inc-card-header">
+                      <div>
+                        <p class="inc-title-label">Incidencia (ID inválido)</p>
+                        <h3 class="inc-title">{i.titulo}</h3>
+                      </div>
+                    </div>
+                    <p class="inc-description">{i.descripcion}</p>
+                  </li>
+                );
+              }
+
+              // Render normal con enlace clicable
+              return (
+                <li key={oid}>
+                  <a
+                    href={`/incidencia/${oid}`}
+                    class={`${getPrioridadClase(i.prioridad)} inc-clickable`}
+                  >
+                    <div class="inc-card-header">
+                      <div>
+                        <p class="inc-title-label">Incidencia</p>
+                        <h3 class="inc-title">{i.titulo}</h3>
+                      </div>
+
+                      <span class={getEstadoClase(i.estado)}>
+                        {i.estado.toUpperCase()}
+                      </span>
+                    </div>
+
+                    <p class="inc-description">{i.descripcion}</p>
+
+                    <div class="inc-meta-row">
+                      <span class="meta-badge">
+                        Prioridad: <strong>{i.prioridad}</strong>
+                      </span>
+
+                      {i.tecnico && (
+                        <span class="meta-badge meta-tech">
+                          Técnico: <strong>{i.tecnico}</strong>
+                        </span>
+                      )}
+                    </div>
+
+                    <div class="inc-dates">
+                      <div>
+                        Creada el:{" "}
+                        {new Date(i.fecha_creacion).toLocaleString()}
+                      </div>
+
+                      {i.fecha_cierre && (
+                        <div>
+                          Cerrada el:{" "}
+                          {new Date(i.fecha_cierre).toLocaleString()}
+                        </div>
+                      )}
+                    </div>
+                  </a>
+                </li>
+              );
+            })}
           </ul>
         )}
     </div>

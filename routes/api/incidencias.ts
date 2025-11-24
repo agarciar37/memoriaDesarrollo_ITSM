@@ -2,9 +2,9 @@
 import { Handlers } from "$fresh/server.ts";
 import { incidencias } from "../../utils/db.ts";
 import { Incidencia } from "../../types.ts";
+import { ObjectId } from "npm:mongodb";
 
 export const handler: Handlers = {
-  // 📩 POST → Crear nueva incidencia
   async POST(req) {
     try {
       const body: Incidencia = await req.json();
@@ -39,7 +39,6 @@ export const handler: Handlers = {
     }
   },
 
-  // 📄 GET → Listar todas las incidencias
   async GET() {
     try {
       const data = await incidencias.find({}).toArray();
@@ -55,26 +54,37 @@ export const handler: Handlers = {
     }
   },
 
-  // 📤 PUT → Actualizar estado (cerrar incidencia)
   async PUT(req) {
     try {
       const { id, estado } = await req.json();
 
-      if (!id || !estado) {
+      const estadosPermitidos: Incidencia["estado"][] = [
+        "abierta",
+        "en curso",
+        "cerrada",
+      ];
+
+      if (!id || !estado || !estadosPermitidos.includes(estado)) {
         return new Response(
-          JSON.stringify({ error: "Faltan campos 'id' o 'estado'" }),
+          JSON.stringify({ error: "Faltan campos 'id' o estado inválido" }),
           { status: 400, headers: { "Content-Type": "application/json" } },
         );
       }
 
       const updateData: any = { estado };
+      const unsetData: Record<string, ""> = {};
       if (estado === "cerrada") {
         updateData.fecha_cierre = new Date();
+      } else {
+        unsetData.fecha_cierre = "";
       }
 
       const { matchedCount } = await incidencias.updateOne(
-        { _id: { $oid: id } },
-        { $set: updateData },
+        { _id: new ObjectId(id) },
+        {
+          ...(Object.keys(updateData).length ? { $set: updateData } : {}),
+          ...(Object.keys(unsetData).length ? { $unset: unsetData } : {}),
+        },
       );
 
       if (!matchedCount) {

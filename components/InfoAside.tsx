@@ -1,0 +1,18 @@
+// components/InfoAside.tsx
+export default function InfoAside() {
+  return (
+    <aside class="aside-box">
+      <h3>Buenas prácticas ITSM</h3>
+      <p>
+        Un registro claro de las incidencias facilita la priorización, el análisis
+        posterior y la mejora continua del servicio.
+      </p>
+      <ul class="aside-list">
+        <li>Usa siempre títulos descriptivos y concisos.</li>
+        <li>Actualiza el estado a “En curso” cuando se esté trabajando activamente.</li>
+        <li>Cierra solo cuando exista confirmación por parte del usuario.</li>
+        <li>Registra la prioridad en función del impacto y la urgencia.</li>
+      </ul>
+    </aside>
+  );
+}
