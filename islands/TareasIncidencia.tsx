@@ -16,7 +16,7 @@ export default function TareasIncidencia({ incidenciaId }: Props) {
   // Cargar tareas
   const cargarTareas = async () => {
     try {
-      const res = await fetch(`/api/tareas?id=${incidenciaId}`);
+      const res = await fetch(`/api/tareas?incidenciaId=${incidenciaId}`);
       const data = await res.json();
       setTareas(data);
     } catch (e) {
@@ -52,7 +52,7 @@ export default function TareasIncidencia({ incidenciaId }: Props) {
     await fetch("/api/tareas", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: tareaId, completada }),
+      body: JSON.stringify({ tareaId, completada }),
     });
 
     setTareas((prev) =>
